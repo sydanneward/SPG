@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Video Recorder</title>
+<style>
+    body {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        background-color: #f4f4f4;
+        font-family: Arial, sans-serif;
+    }
+    #container {
+        text-align: center;
+        background: white;
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    }
+    video {
+        width: 100%;
+        max-width: 720px;
+        border-radius: 8px;
+    }
+    button {
+        padding: 10px 20px;
+        border: none;
+        background-color: #007BFF;
+        color: white;
+        border-radius: 5px;
+        cursor: pointer;
+        margin-top: 10px;
+    }
+    button:disabled {
+        background-color: #ccc;
+    }
+    #status {
+        margin-top: 10px;
+    }
+</style>
+</head>
+<body>
+<div id="container">
+    <video id="video" controls autoplay></video>
+    <div id="status">Press 'Start Recording' to begin</div>
+    <button id="startRecord">Start Recording</button>
+    <button id="stopRecord" disabled>Stop Recording</button>
+    <button id="uploadVideo" disabled>Upload Video</button>
+    <button id="restart">Restart</button>
+</div>
+<script>
+    let mediaRecorder;
+    let recordedBlobs;
+    let mediaStream;
+
+    const video = document.querySelector('video');
+    const startButton = document.getElementById('startRecord');
+    const stopButton = document.getElementById('stopRecord');
+    const restartButton = document.getElementById('restart');
+    const uploadButton = document.getElementById('uploadVideo');
+    const statusDiv = document.getElementById('status');
+
+    function initCamera() {
+        navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+            .then(stream => {
+                mediaStream = stream;
+                video.srcObject = stream;
+                video.controls = false;
+                video.play();
+                setupRecorder(stream);
+            }).catch(error => {
+                console.error('Error accessing media devices.', error);
+                statusDiv.textContent = 'Error accessing your camera or microphone.';
+            });
+    }
+
+    function setupRecorder(stream) {
+        mediaRecorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+        recordedBlobs = [];
+        mediaRecorder.ondataavailable = event => {
+            if (event.data.size > 0) {
+                recordedBlobs.push(event.data);
+            }
+        };
+        mediaRecorder.onstop = () => {
+            const superBuffer = new Blob(recordedBlobs, { type: 'video/webm' });
+            const videoBlobUrl = window.URL.createObjectURL(superBuffer);
+            video.src = videoBlobUrl;
+            video.controls = true;
+            uploadButton.disabled = false;
+            restartButton.disabled = false;
+            statusDiv.textContent = 'Review your video and upload if satisfied.';
+        };
+        startButton.disabled = false;
+        stopButton.disabled = true;
+        uploadButton.disabled = true;
+        restartButton.disabled = true;
+        statusDiv.textContent = 'Press "Start Recording" to begin';
+    }
+
+    startButton.addEventListener('click', () => {
+        if (mediaRecorder.state === "inactive") {
+            mediaRecorder.start();
+            console.log('Recording started');
+            startButton.disabled = true;
+            stopButton.disabled = false;
+            uploadButton.disabled = true;
+            restartButton.disabled = true;
+            statusDiv.textContent = 'Recording...';
+        }
+    });
+
+    stopButton.addEventListener('click', () => {
+        if (mediaRecorder.state === "recording") {
+            mediaRecorder.stop();
+            console.log('Recording stopped');
+            stopButton.disabled = true;
+            startButton.textContent = 'Record Again';
+            startButton.disabled = false;
+            statusDiv.textContent = 'Processing recording...';
+        }        
+    });
+
+    uploadButton.addEventListener('click', () => {
+        const blob = new Blob(recordedBlobs, { type: 'video/webm' });
+        uploadVideo(blob);
+        uploadButton.disabled = true;
+        restartButton.disabled = true;
+    });
+
+    function uploadVideo(blob) {
+        let formData = new FormData();
+        formData.append('video', blob, 'video.webm');
+        fetch('/upload', { method: 'POST', body: formData })
+            .then(response => response.text())
+            .then(data => {
+                statusDiv.textContent = 'Upload successful: ' + data;
+            }).catch(error => {
+                statusDiv.textContent = 'Failed to upload video';
+                console.error('Error uploading video:', error);
+            });
+    }
+
+    restartButton.onclick = () => {
+        initCamera();
+        restartButton.disabled = true;
+        statusDiv.textContent = 'Camera restarted. Ready to record.';
+    };
+
+    document.addEventListener('DOMContentLoaded', initCamera);
+</script>
+</body>
+</html>
